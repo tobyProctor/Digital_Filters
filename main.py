@@ -9,66 +9,86 @@ SCREEN_RES_X = 1400
 SCREEN_RES_Y = 900
 COLOUR_SUN = (255, 255, 0)
 RANGE = 35
+FIR_COEF = [1, 1, 1, 1 , 1]
+TIME_SIZE = 4096
 
-# pygame.init()
-# screen = pygame.display.set_mode([SCREEN_RES_X, SCREEN_RES_Y])
+def apply_fir_filter(signal):
+    y = [0, 0, 0, 0, 0]
+    filter_signal = []
 
-# def main():
-#     screen.fill(COLOUR_BACKGROUND)
+    for x in range(len(signal)-4):
+        y[0] = signal[x]   * FIR_COEF[0]
+        y[1] = signal[x+1] * FIR_COEF[1]
+        y[2] = signal[x+2] * FIR_COEF[2]
+        y[3] = signal[x+3] * FIR_COEF[3]
+        y[4] = signal[x+4] * FIR_COEF[4]
+        filter_signal.append(np.sum(y))
 
-#     while True:
-#         # Exit on close button
-#         for event in pygame.event.get():
-#             if event.type == pygame.QUIT:
-#                 pygame.quit()
-#                 sys.exit()
+    return filter_signal
 
-#         screen.fill(COLOUR_BACKGROUND)
-#         for x in range(len(time)):
-#             x_y_modifier = ((SCREEN_RES_X-100)/RANGE)/2
-#             x_x_modifier = SCREEN_RES_Y/4+100
-#             y_y_modifier = -0.1
-#             y_x_modifier = 30+(SCREEN_RES_X/2)
-#             pygame.draw.circle(screen, COLOUR_SUN, ((time[x]*x_y_modifier)+y_x_modifier, (fft[x]*y_y_modifier)+x_x_modifier), 1)
+def qpsk_modulation(data, time):
+    x = 0
+    y = 0
+    time = np.arange(TIME_SIZE)*np.pi/2048
+    output_signal = [0] * int((TIME_SIZE*len(data)*0.5))
 
-#         for x in range(len(time)):
-#             x_y_modifier = ((SCREEN_RES_X-40)/RANGE)/2
-#             x_x_modifier = SCREEN_RES_Y/4
-#             y_y_modifier = SCREEN_RES_Y/8
-#             y_x_modifier = 20
-#             pygame.draw.circle(screen, COLOUR_SUN, ((time[x]*x_y_modifier)+y_x_modifier, (amplitude[x]*y_y_modifier)+x_x_modifier), 2)
-#             #print("{}, {}".format((time[x]*(SCREEN_RES_X/RANGE)), ((amplitude[x]*(SCREEN_RES_Y/4))+(SCREEN_RES_Y/2))))
-#             pygame.display.flip()
+    for i in range(len(data)):
+        if(x >= len(data)):
+            break
+
+        data_width = y*TIME_SIZE
+
+        if "{}{}".format(data[x], data[x+1]) == "00":
+            output_signal[data_width:data_width+TIME_SIZE] = np.sin(time-0)
+        elif "{}{}".format(data[x], data[x+1]) == "01":
+            output_signal[data_width:data_width+TIME_SIZE] = np.sin(time-np.pi/2)
+        elif "{}{}".format(data[x], data[x+1]) == "10":
+            output_signal[data_width:data_width+TIME_SIZE] = np.sin(time-np.pi)
+        elif "{}{}".format(data[x], data[x+1]) == "11":
+            output_signal[data_width:data_width+TIME_SIZE] = np.sin(time-np.pi*1.5)
+        else:
+            print("Error - Invalid data")
+
+        x+=2
+        y+=1
+        
+    return output_signal
 
 def main():
-    time = np.arange(0, RANGE, 0.01)
-    amplitude = np.sin(time) + np.sin(10*time)*0.3 + np.sin(100*time)*0.5 + np.sin(130*time)*0.1 
-    fft = abs(np.fft.fft(amplitude))
+    data = "0011001100100111000110"
+    signal_length = TIME_SIZE * int(len(data)*0.5)
+    time = np.arange(signal_length)*np.pi/2048
+
+    transmitted_signal = qpsk_modulation(data, time)
+    fft = abs(np.fft.fft(transmitted_signal))
+
+    transmitted_signal_noise = transmitted_signal + np.sin(200*time)*0.3 + np.sin(100*time)*0.3 + np.sin(130*time)*0.4
+    fft_noise = abs(np.fft.fft(transmitted_signal_noise))
+
+    filter_signal = apply_fir_filter(transmitted_signal_noise)
+    filter_fft = abs(np.fft.fft(filter_signal))
 
     fig = plt.figure(figsize=(10, 9))
-    axes = fig.subplots(nrows=1, ncols=2)
+    axes = fig.subplots(nrows=4, ncols=2)
 
-    # Plotting time vs amplitude using plot function from pyplot
-    axes[1].plot(time, amplitude)
-    axes[0].plot(fft)
+    axes[0][0].title.set_text('Input signal')
+    axes[0][0].plot(transmitted_signal)
 
-    # Settng title for the plot in blue color
-    plt.title('Sine Wave', color='b')
+    axes[0][1].title.set_text('Input signal PD')
+    axes[0][1].plot(fft)
 
-    # Setting x axis label for the plot
-    plt.xlabel('Time'+ r'$\rightarrow$')
+    axes[1][0].title.set_text('Input signal with noise')
+    axes[1][0].plot(transmitted_signal_noise)
 
-    # Setting y axis label for the plot
-    plt.ylabel('Sin(time) '+ r'$\rightarrow$')
+    axes[1][1].title.set_text('Input signal with noise PD')
+    axes[1][1].plot(fft_noise)
 
-    # Showing grid
-    plt.grid()
+    axes[2][0].title.set_text('FIR filtered input signal')
+    axes[2][0].plot(filter_signal)
 
-    # Highlighting axis at x=0 and y=0
-    plt.axhline(y=0, color='k')
-    plt.axvline(x=0, color='k')
+    axes[2][1].title.set_text('FIR filtered input PD')
+    axes[2][1].plot(filter_fft)
 
-    # Finally displaying the plot
     plt.show()
 
 if __name__ == "__main__":
